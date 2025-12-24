@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { Prisma } from 'generated/prisma';
+import { Prisma } from '@prisma/client';
 type RoleFilter = 'host' | 'attending' | 'all';
 type TimeFilter = 'past' | 'future' | 'all';
 @Injectable()

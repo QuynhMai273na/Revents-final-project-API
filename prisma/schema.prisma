@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  email       String  @unique
+  displayName String? @map("display_name")
+  photoUrl    String? @map("photo_url")
+  password    String  @default("")
+  description String? @db.Text
+
+  hostedEvents Event[]         @relation("HostEvents")
+  attendances  EventAttendee[]
+
+  following Follow[] @relation("UserFollowing") // mình follow ai
+  followers Follow[] @relation("UserFollowers") // ai follow mình
+
+  @@map("users")
+}
+
+model Event {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  title       String
+  category    String
+  date        DateTime
+  description String?
+  city        String?
+  venue       String?
+  latitude    Float?
+  longitude   Float?
+
+  hostId String @map("host_id")
+  host   User   @relation("HostEvents", fields: [hostId], references: [id], onDelete: Cascade)
+
+  attendees EventAttendee[]
+
+  isCancelled Boolean @default(false)
+
+  @@map("events")
+}
+
+model EventAttendee {
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  eventId String
+  userId  String
+  isHost  Boolean @default(false)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@map("events_attendees")
+}
+
+model Follow {
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  followerId  String @map("follower_id")
+  followingId String @map("following_id")
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}

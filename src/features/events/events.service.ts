@@ -2,8 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
-import { AuthPayload } from '../auth/auth.interface';
-
+export type EventQuery = {
+  query?: 'all' | 'going' | 'hosting';
+  startDate?: string;
+  page?: number;
+  limit?: number;
+  userId?: string;
+};
 @Injectable()
 export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -40,17 +45,94 @@ export class EventsService {
     return event;
   }
 
-  findAll() {
-    return this.prisma.event.findMany({
-      include: {
-        host: true,
-        attendees: {
-          include: {
-            user: true,
+  async findAll({
+    query = 'all',
+    startDate,
+    page = 1,
+    limit = 10,
+    userId,
+  }: EventQuery) {
+    const where: any = {};
+
+    // startDate filter
+    if (startDate) {
+      const parsed = new Date(startDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        where.date = { gte: parsed };
+      }
+    }
+
+    // 2) query filter
+    if (query === 'hosting') {
+      if (!userId) {
+        return {
+          items: [],
+          meta: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false,
           },
+        };
+      }
+
+      where.hostId = userId;
+    }
+
+    if (query === 'going') {
+      if (!userId) {
+        return {
+          items: [],
+          meta: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNext: false,
+            hasPrev: false,
+          },
+        };
+      }
+
+      // event có attendee userId
+      where.attendees = {
+        some: { userId }, // Prisma relation filter
+      };
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 50); // chống spam
+    const safePage = Math.max(page, 1);
+    const skip = (safePage - 1) * safeLimit;
+
+    const [total, items] = await Promise.all([
+      this.prisma.event.count({ where }),
+      this.prisma.event.findMany({
+        where,
+        orderBy: { date: 'asc' },
+        skip,
+        take: safeLimit,
+        include: {
+          host: true,
+          attendees: { include: { user: true } },
         },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / safeLimit);
+
+    return {
+      items,
+      meta: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        totalPages,
+        hasNext: safePage < totalPages,
+        hasPrev: safePage > 1,
       },
-    });
+    };
   }
 
   findOne(id: string) {

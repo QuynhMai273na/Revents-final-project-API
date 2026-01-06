@@ -8,6 +8,21 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Prisma } from '@prisma/client';
 type RoleFilter = 'host' | 'attending' | 'all';
 type TimeFilter = 'past' | 'future' | 'all';
+const clampLimit = (limit?: number) => Math.min(Math.max(limit ?? 10, 1), 50);
+const clampPage = (page?: number) => Math.max(page ?? 1, 1);
+
+const buildMeta = (page: number, limit: number, total: number) => {
+  const totalPages = Math.ceil(total / limit);
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasPrev: page > 1,
+    hasNext: page < totalPages,
+  };
+};
+
 @Injectable()
 export class ProfilesService {
   constructor(private prisma: PrismaService) {}
@@ -102,11 +117,10 @@ export class ProfilesService {
 
   async findUserEvents(
     userId: string,
-    opts: { role: RoleFilter; time: TimeFilter },
+    opts: { role: RoleFilter; time: TimeFilter; page?: number; limit?: number },
   ) {
     const now = new Date();
-    //TODO: use swich case, type prisma
-    // role condition
+
     const { role, time } = opts;
     const roleWhere: Prisma.EventWhereInput = {};
     if (role === 'host') {
@@ -117,90 +131,86 @@ export class ProfilesService {
       roleWhere.OR = [{ hostId: userId }, { attendees: { some: { userId } } }];
     }
 
-    // opts.role === 'host'
-    //   ? { hostId: userId }
-    //   : opts.role === 'attending'
-    //     ? { attendees: { some: { userId } } }
-    //     : {
-    //         OR: [{ hostId: userId }, { attendees: { some: { userId } } }],
-    //       };
-
     // time condition
     const dateFilter: Prisma.DateTimeFilter['lt' | 'gte'] =
       opts.time === 'past' ? 'lt' : 'gte';
-    const timeWhere = {
-      date: {
-        [dateFilter]: now,
-      },
+
+    const where: Prisma.EventWhereInput = {
+      ...roleWhere,
+      date: { [dateFilter]: now },
     };
 
-    const events = await this.prisma.event.findMany({
-      where: {
-        ...roleWhere,
-        ...timeWhere,
-      },
-      orderBy: { date: opts.time === 'past' ? 'desc' : 'asc' },
-      include: {
-        host: { select: { id: true, displayName: true, photoUrl: true } },
-        attendees: {
-          select: {
-            userId: true,
-            isHost: true,
-            user: { select: { id: true, displayName: true, photoUrl: true } },
+    const limit = clampLimit(opts.limit);
+    const page = clampPage(opts.page);
+    const skip = (page - 1) * limit;
+
+    const [total, items] = await Promise.all([
+      this.prisma.event.count({ where }),
+      this.prisma.event.findMany({
+        where,
+        orderBy: { date: time === 'past' ? 'desc' : 'asc' },
+        skip,
+        take: limit,
+        include: {
+          host: { select: { id: true, displayName: true, photoUrl: true } },
+          attendees: {
+            select: {
+              userId: true,
+              isHost: true,
+              user: { select: { id: true, displayName: true, photoUrl: true } },
+            },
           },
         },
-      },
-    });
+      }),
+    ]);
 
-    return events;
+    return { items, meta: buildMeta(page, limit, total) };
   }
 
-  async findAllUsers(meId: string, mode: 'all' | 'followers' | 'following') {
-    let where = {};
+  async findAllUsers(
+    id: string,
+    meId: string,
+    mode: 'all' | 'followers' | 'following',
+    page?: number,
+    limit?: number,
+  ) {
+    let where: Prisma.UserWhereInput = {};
 
     if (mode === 'followers') {
-      // users mà họ follow mình
-      where = {
-        following: {
-          some: { followingId: meId },
-        },
-      };
+      where = { following: { some: { followingId: id } } };
+    } else if (mode === 'following') {
+      where = { followers: { some: { followerId: id } } };
+    } else {
+      where = {};
     }
 
-    if (mode === 'following') {
-      // users mà mình follow họ
-      where = {
-        followers: {
-          some: { followerId: meId },
-        },
-      };
-    }
+    const take = clampLimit(limit);
+    const p = clampPage(page);
+    const skip = (p - 1) * take;
 
-    const users = await this.prisma.user.findMany({
-      where: {
-        followers: {
-          some: { followerId: meId },
+    const [total, users] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        select: {
+          id: true,
+          displayName: true,
+          photoUrl: true,
+          description: true,
+          createdAt: true,
+          followers: {
+            where: { followerId: meId },
+            select: { followerId: true },
+            take: 1,
+          },
         },
-        following: {
-          some: { followingId: meId },
-        },
-      },
-      select: {
-        id: true,
-        displayName: true,
-        photoUrl: true,
-        description: true,
-        createdAt: true,
+      }),
+    ]);
 
-        // để FE biết có đang follow user này không
-        followers: {
-          where: { followerId: meId },
-          select: { followerId: true },
-          take: 1,
-        },
-      },
-    });
-    return users.map((u) => ({
+    const items = users.map((u) => ({
       id: u.id,
       displayName: u.displayName,
       photoUrl: u.photoUrl,
@@ -208,7 +218,10 @@ export class ProfilesService {
       createdAt: u.createdAt,
       isFollowing: u.followers.length > 0,
     }));
+
+    return { items, meta: buildMeta(p, take, total) };
   }
+
   async followService(userId: string, followingId: string) {
     if (userId === followingId) {
       throw new BadRequestException("Can't follow yourself");

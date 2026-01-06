@@ -19,15 +19,6 @@ import { AuthPayload } from '../auth/auth.interface';
 @Controller('profiles')
 export class ProfilesController {
   constructor(private readonly profilesService: ProfilesService) {}
-  @UseGuards(AuthGuard)
-  @Get('members')
-  getMembers(
-    @CurrentUser('id') meId: AuthPayload['id'],
-    @Query('mode') mode: 'all' | 'followers' | 'following' = 'all',
-    // TODO: add dto for mode
-  ) {
-    return this.profilesService.findAllUsers(meId, mode);
-  }
 
   @Get()
   findAll() {
@@ -50,14 +41,39 @@ export class ProfilesController {
     return this.profilesService.updateMyProfile(currentUserId, dto);
   }
 
-  //TODO: Use dto to validate
+  @UseGuards(AuthGuard)
+  @Get(':id/members')
+  getMembers(
+    @Param('id') id: string,
+    @CurrentUser('id') meId: AuthPayload['id'],
+    @Query('mode') mode: 'all' | 'followers' | 'following' = 'all',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.profilesService.findAllUsers(
+      id,
+      meId,
+      mode,
+      page ? Number(page) : undefined,
+      limit ? Number(limit) : undefined,
+    );
+  }
+
+  // TODO: Use dto to validate
   @Get(':id/events')
   getUserEvents(
     @Param('id') id: string,
     @Query('role') role: 'host' | 'attending' | 'all' = 'all',
     @Query('time') time: 'past' | 'future' | 'all' = 'all',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.profilesService.findUserEvents(id, { role, time });
+    return this.profilesService.findUserEvents(id, {
+      role,
+      time,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   @UseGuards(AuthGuard)

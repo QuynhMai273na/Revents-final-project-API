@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  Query,
 } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -15,6 +16,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { AuthGuard } from '../auth/auth.guard';
 import type { AuthPayload } from '../auth/auth.interface';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { EventQueryDto } from './dto/events-query.dto';
 @Controller('events')
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
@@ -29,9 +31,13 @@ export class EventsController {
     return this.eventsService.create(body, currentUserId);
   }
 
+  @UseGuards(AuthGuard)
   @Get()
-  findAll() {
-    return this.eventsService.findAll();
+  findAll(
+    @Query() q: EventQueryDto,
+    @CurrentUser('id') userId?: AuthPayload['id'],
+  ) {
+    return this.eventsService.findAll({ ...q, userId });
   }
 
   @Get(':id')

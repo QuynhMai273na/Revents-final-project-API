@@ -6,41 +6,39 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { Prisma } from '@prisma/client';
+import {
+  normalizePagination,
+  buildPaginationMeta,
+} from 'src/shared/pagination/pagination.util';
+
 type RoleFilter = 'host' | 'attending' | 'all';
 type TimeFilter = 'past' | 'future' | 'all';
-const clampLimit = (limit?: number) => Math.min(Math.max(limit ?? 10, 1), 50);
-const clampPage = (page?: number) => Math.max(page ?? 1, 1);
-
-const buildMeta = (page: number, limit: number, total: number) => {
-  const totalPages = Math.ceil(total / limit);
-  return {
-    page,
-    limit,
-    total,
-    totalPages,
-    hasPrev: page > 1,
-    hasNext: page < totalPages,
-  };
-};
 
 @Injectable()
 export class ProfilesService {
   constructor(private prisma: PrismaService) {}
-  async findAll() {
-    const users = await this.prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        photoUrl: true,
-        displayName: true,
-        createdAt: true,
-        description: true,
-        followers: { select: { followerId: true } },
-        following: { select: { followingId: true } },
-      },
-    });
+  async findAll(page?: number, limit?: number) {
+    const pagination = normalizePagination(page, limit);
 
-    return users.map((u) => ({
+    const [total, users] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.limit,
+        select: {
+          id: true,
+          photoUrl: true,
+          displayName: true,
+          createdAt: true,
+          description: true,
+          followers: { select: { followerId: true } },
+          following: { select: { followingId: true } },
+        },
+      }),
+    ]);
+
+    const items = users.map((u) => ({
       id: u.id,
       photoUrl: u.photoUrl,
       displayName: u.displayName,
@@ -49,6 +47,11 @@ export class ProfilesService {
       followerCount: u.followers.length,
       followingCount: u.following.length,
     }));
+
+    return {
+      items,
+      meta: buildPaginationMeta(pagination.page, pagination.limit, total),
+    };
   }
 
   async findOne(userId: string, meId: string) {
@@ -140,17 +143,15 @@ export class ProfilesService {
       date: { [dateFilter]: now },
     };
 
-    const limit = clampLimit(opts.limit);
-    const page = clampPage(opts.page);
-    const skip = (page - 1) * limit;
+    const pagination = normalizePagination(opts.page, opts.limit);
 
     const [total, items] = await Promise.all([
       this.prisma.event.count({ where }),
       this.prisma.event.findMany({
         where,
         orderBy: { date: time === 'past' ? 'desc' : 'asc' },
-        skip,
-        take: limit,
+        skip: pagination.skip,
+        take: pagination.limit,
         include: {
           host: { select: { id: true, displayName: true, photoUrl: true } },
           attendees: {
@@ -164,7 +165,10 @@ export class ProfilesService {
       }),
     ]);
 
-    return { items, meta: buildMeta(page, limit, total) };
+    return {
+      items,
+      meta: buildPaginationMeta(pagination.page, pagination.limit, total),
+    };
   }
 
   async findAllUsers(
@@ -184,17 +188,15 @@ export class ProfilesService {
       where = {};
     }
 
-    const take = clampLimit(limit);
-    const p = clampPage(page);
-    const skip = (p - 1) * take;
+    const pagination = normalizePagination(page, limit);
 
     const [total, users] = await Promise.all([
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        skip,
-        take,
+        skip: pagination.skip,
+        take: pagination.limit,
         select: {
           id: true,
           displayName: true,
@@ -219,7 +221,10 @@ export class ProfilesService {
       isFollowing: u.followers.length > 0,
     }));
 
-    return { items, meta: buildMeta(p, take, total) };
+    return {
+      items,
+      meta: buildPaginationMeta(pagination.page, pagination.limit, total),
+    };
   }
 
   async followService(userId: string, followingId: string) {

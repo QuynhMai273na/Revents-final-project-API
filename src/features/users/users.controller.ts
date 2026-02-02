@@ -7,20 +7,22 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import { CurrentUser } from 'src/features/auth/current-user.decorator';
 import { UsersService } from './users.service';
-import UpdateUserDto from './dto/update-user.dto';
-import { AuthGuard } from '../auth/auth.guard';
-import type { AuthPayload } from '../auth/auth.interface';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { PaginationDto } from 'src/shared/pagination/pagination.dto';
+import { AuthUser } from '../auth/auth-user.interface';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll() {
-    return this.usersService.findAll();
+  findAll(@Query() pagination: PaginationDto) {
+    return this.usersService.findAll(pagination.page, pagination.limit);
   }
 
   @Get(':id')
@@ -28,18 +30,19 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body()
     body: UpdateUserDto,
-    @CurrentUser('id') currentUserId: AuthPayload['id'],
+    // @CurrentUser('id') currentUserId: AuthUser['id'],
   ) {
-    return this.usersService.update(id, body, currentUserId);
+    // return this.usersService.update(id, body, currentUserId);
+    return { message: 'Test' };
   }
 
-  @UseGuards(AuthGuard)
+  // @UseGuards(AuthGuard('jwt'))
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.usersService.remove(id);

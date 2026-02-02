@@ -12,50 +12,53 @@ import {
 } from '@nestjs/common';
 import { ProfilesService } from './profiles.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthPayload } from '../auth/auth.interface';
-
+import { PaginationDto } from 'src/shared/pagination/pagination.dto';
+import {
+  ProfileEventsQueryDto,
+  ProfileMembersQueryDto,
+} from './dto/profile-query.dto';
+import { AuthUser } from '../auth/auth-user.interface';
+import { AuthGuard } from '@nestjs/passport';
 @Controller('profiles')
 export class ProfilesController {
   constructor(private readonly profilesService: ProfilesService) {}
 
   @Get()
-  findAll() {
-    return this.profilesService.findAll();
+  findAll(@Query() pagination: PaginationDto) {
+    return this.profilesService.findAll(pagination.page, pagination.limit);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser('id') meId: AuthPayload['id']) {
+  findOne(@Param('id') id: string, @CurrentUser('id') meId: AuthUser['id']) {
     return this.profilesService.findOne(id, meId);
   }
 
   // update bản thân (không cho update người khác)
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Put('me')
   updateMe(
-    @CurrentUser('id') currentUserId: AuthPayload['id'],
+    @CurrentUser('id') currentUserId: AuthUser['id'],
     @Body() dto: UpdateProfileDto,
   ) {
     return this.profilesService.updateMyProfile(currentUserId, dto);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Get(':id/members')
   getMembers(
     @Param('id') id: string,
-    @CurrentUser('id') meId: AuthPayload['id'],
-    @Query('mode') mode: 'all' | 'followers' | 'following' = 'all',
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @CurrentUser('id') meId: AuthUser['id'],
+    @Query() query: ProfileMembersQueryDto,
   ) {
     return this.profilesService.findAllUsers(
       id,
       meId,
-      mode,
-      page ? Number(page) : undefined,
-      limit ? Number(limit) : undefined,
+      query.mode ?? 'all',
+      query.page,
+      query.limit,
     );
   }
 
@@ -63,23 +66,20 @@ export class ProfilesController {
   @Get(':id/events')
   getUserEvents(
     @Param('id') id: string,
-    @Query('role') role: 'host' | 'attending' | 'all' = 'all',
-    @Query('time') time: 'past' | 'future' | 'all' = 'all',
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: ProfileEventsQueryDto,
   ) {
     return this.profilesService.findUserEvents(id, {
-      role,
-      time,
-      page: page ? Number(page) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      role: query.role ?? 'all',
+      time: query.time ?? 'all',
+      page: query.page,
+      limit: query.limit,
     });
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Post(':id/follow')
   toggleFollow(
-    @CurrentUser('id') userId: AuthPayload['id'],
+    @CurrentUser('id') userId: AuthUser['id'],
     @Param('id') followingId: string,
   ) {
     return this.profilesService.followService(userId, followingId);

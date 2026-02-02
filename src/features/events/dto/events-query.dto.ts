@@ -11,6 +11,10 @@ export class EventQueryDto {
   startDate?: string;
 
   @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

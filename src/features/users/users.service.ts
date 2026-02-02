@@ -1,31 +1,39 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import UpdateUserDto from './dto/update-user.dto';
-import { CreateUserDto } from './dto/create-user.dto';
-import { CurrentUser } from '../auth/current-user.decorator';
-import { AuthPayload } from '../auth/auth.interface';
-
+import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  normalizePagination,
+  buildPaginationMeta,
+} from 'src/shared/pagination/pagination.util';
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // async create(body: CreateUserDto) {
-  //   const user = await this.prisma.user.create({ data: body });
-  //   return user;
-  // }
+  async findAll(page?: number, limit?: number) {
+    const pagination = normalizePagination(page, limit);
 
-  findAll() {
-    return this.prisma.user.findMany({
-      include: {
-        hostedEvents: true,
-        attendances: {
-          include: {
-            event: true,
+    const [total, users] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.findMany({
+        skip: pagination.skip,
+        take: pagination.limit,
+        include: {
+          hostedEvents: true,
+          attendances: {
+            include: {
+              event: true,
+            },
           },
         },
-      },
-    });
+      }),
+    ]);
+
+    return {
+      items: users,
+      meta: buildPaginationMeta(pagination.page, pagination.limit, total),
+    };
   }
+
   findOne(id: string) {
     const user = this.prisma.user.findUnique({
       where: { id },

@@ -9,6 +9,8 @@ import configuration from './config/configuration';
 import { validateConfiguration } from './config/validate-configuration';
 import { AuthModule } from './features/auth/auth.module';
 import { ProfilesModule } from './features/profiles/profiles.module';
+import { ChatsModule } from './features/chats/chats.module';
+import { FilesModule } from './features/files/files.module';
 
 @Module({
   imports: [
@@ -22,8 +24,10 @@ import { ProfilesModule } from './features/profiles/profiles.module';
     UsersModule,
     AuthModule,
     ProfilesModule,
+    ChatsModule,
+    FilesModule,
   ],
   controllers: [AppController],
-  providers: [AppService, PrismaService],
+  providers: [AppService],
 })
 export class AppModule {}

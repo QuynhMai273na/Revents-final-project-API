@@ -20,10 +20,16 @@ class EnvironmentVariables {
   SALT_ROUNDS: number;
 
   @IsString()
-  JWT_SECRET: string;
+  JWT_ACCESS_SECRET: string;
 
   @IsString()
-  JWT_EXPIRES_IN: string;
+  JWT_ACCESS_EXPIRES_IN: string;
+
+  @IsString()
+  JWT_REFRESH_SECRET: string;
+
+  @IsString()
+  JWT_REFRESH_EXPIRES_IN: string;
 }
 
 export function validateConfiguration(config: Record<string, unknown>) {

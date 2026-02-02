@@ -1,4 +1,6 @@
 export interface AuthPayload {
-  id: string;
+  sub: string; // userId
   email: string;
+  iat?: number;
+  exp?: number;
 }

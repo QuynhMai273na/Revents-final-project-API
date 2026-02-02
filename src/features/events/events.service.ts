@@ -2,9 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import {
+  normalizePagination,
+  buildPaginationMeta,
+} from 'src/shared/pagination/pagination.util';
 export type EventQuery = {
   query?: 'all' | 'going' | 'hosting';
   startDate?: string;
+  endDate?: string;
   page?: number;
   limit?: number;
   userId?: string;
@@ -13,29 +18,26 @@ export type EventQuery = {
 export class EventsService {
   constructor(private readonly prisma: PrismaService) {}
   async create(body: CreateEventDto, hostId: string) {
+    const venueObj = body.venue;
+
     const event = await this.prisma.event.create({
       data: {
         title: body.title,
         description: body.description,
         category: body.category,
         date: new Date(body.date),
-        city: body.city,
-        venue: body.venue,
-        latitude: body.latitude ?? 0,
-        longitude: body.longitude ?? 0,
+
+        venue: venueObj?.venue ?? '',
+        city: venueObj?.city ?? '',
+        latitude: venueObj?.latitude ?? 0,
+        longitude: venueObj?.longitude ?? 0,
 
         host: {
-          connect: {
-            id: hostId,
-          },
+          connect: { id: hostId },
         },
         attendees: {
           create: {
-            user: {
-              connect: {
-                id: hostId,
-              },
-            },
+            user: { connect: { id: hostId } },
             isHost: true,
           },
         },
@@ -48,71 +50,56 @@ export class EventsService {
   async findAll({
     query = 'all',
     startDate,
-    page = 1,
-    limit = 10,
+    endDate,
+    page,
+    limit,
     userId,
   }: EventQuery) {
     const where: any = {};
+    //  chỉ lấy events đã qua
 
     // startDate filter
-    if (startDate) {
-      const parsed = new Date(startDate);
-      if (!Number.isNaN(parsed.getTime())) {
-        where.date = { gte: parsed };
+    if (startDate || endDate) {
+      where.date = {};
+
+      if (startDate) {
+        const from = new Date(startDate);
+        if (!Number.isNaN(from.getTime())) {
+          where.date.gte = from;
+        }
+      }
+
+      if (endDate) {
+        const to = new Date(endDate);
+        if (!Number.isNaN(to.getTime())) {
+          where.date.lte = to;
+        }
       }
     }
 
-    // 2) query filter
-    if (query === 'hosting') {
-      if (!userId) {
-        return {
-          items: [],
-          meta: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0,
-            hasNext: false,
-            hasPrev: false,
-          },
+    if (userId) {
+      // 2) query filter
+      if (query === 'hosting') {
+        where.hostId = userId;
+      }
+
+      if (query === 'going') {
+        // event có attendee userId
+        where.attendees = {
+          some: { userId }, // Prisma relation filter
         };
       }
-
-      where.hostId = userId;
     }
 
-    if (query === 'going') {
-      if (!userId) {
-        return {
-          items: [],
-          meta: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0,
-            hasNext: false,
-            hasPrev: false,
-          },
-        };
-      }
-
-      // event có attendee userId
-      where.attendees = {
-        some: { userId }, // Prisma relation filter
-      };
-    }
-
-    const safeLimit = Math.min(Math.max(limit, 1), 50); // chống spam
-    const safePage = Math.max(page, 1);
-    const skip = (safePage - 1) * safeLimit;
+    const pagination = normalizePagination(page, limit);
 
     const [total, items] = await Promise.all([
       this.prisma.event.count({ where }),
       this.prisma.event.findMany({
         where,
         orderBy: { date: 'asc' },
-        skip,
-        take: safeLimit,
+        skip: pagination.skip,
+        take: pagination.limit,
         include: {
           host: true,
           attendees: { include: { user: true } },
@@ -120,18 +107,9 @@ export class EventsService {
       }),
     ]);
 
-    const totalPages = Math.ceil(total / safeLimit);
-
     return {
       items,
-      meta: {
-        page: safePage,
-        limit: safeLimit,
-        total,
-        totalPages,
-        hasNext: safePage < totalPages,
-        hasPrev: safePage > 1,
-      },
+      meta: buildPaginationMeta(pagination.page, pagination.limit, total),
     };
   }
 
@@ -160,11 +138,18 @@ export class EventsService {
     }
 
     try {
+      const { venue, ...rest } = body;
+
       const updatedEvent = await this.prisma.event.update({
         where: { id },
         data: {
-          ...body,
+          ...rest,
           date: body.date ? new Date(body.date) : event.date,
+
+          venue: venue?.venue ?? event.venue,
+          city: venue?.city ?? event.city,
+          latitude: venue?.latitude ?? event.latitude,
+          longitude: venue?.longitude ?? event.longitude,
         },
       });
 
